@@ -1,0 +1,140 @@
+
+if (!require("vegan")) install.packages("vegan")
+if (!require("iNEXT")) install.packages("iNEXT")
+if (!require("ggplot2")) install.packages("ggplot2")
+library(vegan)
+library(iNEXT)
+library(ggplot2)
+
+# 1. Leer los datos
+data <- read.csv("haghkerdar-comm-matrix_EandE2019.csv")
+
+# 2. Preparación de los datos: Extracción de columnas de abundancia de familias
+abundance_data <- data[, 4:ncol(data)]
+
+# Agrupar por canal (channel) y sumar abundancias
+channel_data <- aggregate(abundance_data, by = list(Channel = data$channel), FUN = sum)
+rownames(channel_data) <- channel_data$Channel
+channel_data <- channel_data[, -1]
+
+# 3a. Cálculo de riqueza de familias por canal
+family_richness <- specnumber(channel_data)
+
+# 3b. Índice de Shannon-Wiener
+shannon_index <- diversity(channel_data, index = "shannon")
+
+# 3c. Índice de Simpson (Gini-Simpson)
+simpson_index <- 1 - diversity(channel_data, index = "simpson") # Gini-Simpson: 1 - Simpson
+
+# 3d. Índice de Pielou (Equitatividad)
+pielou_index <- shannon_index / log(family_richness)
+pielou_index
+
+# 4. Exportar resultados numéricos a un archivo .txt
+# Crear un dataframe organizado
+indices_data <- data.frame(
+  Channel = rownames(channel_data),
+  Riqueza = family_richness,
+  Shannon = shannon_index,
+  Gini_Simpson = simpson_index,
+  Pielou = pielou_index
+)
+
+cat("Resultados numéricos de los índices de diversidad por canal:\n")
+print(indices_data)
+
+# Exportar resultados numéricos a un archivo de texto
+write.table(indices_data, "diversity_indices.txt", sep = "\t", quote = FALSE, row.names = FALSE,
+            col.names = c("Channel", "Riqueza de Familias", "Índice de Shannon-Wiener", 
+                          "Índice de Gini-Simpson", "Índice de Pielou"))
+print("Resultados numéricos de índices de diversidad exportados a 'diversity_indices.txt'.")
+
+# 5. Graficar cada índice con ggplot2
+
+# Riqueza de Familias
+ggplot(indices_data, aes(x = Channel, y = Riqueza)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Riqueza de Familias por Canal", x = "Canal", y = "Número de Familias") +
+  theme_minimal()
+
+# Índice de Shannon-Wiener
+ggplot(indices_data, aes(x = Channel, y = Shannon)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  labs(title = "Índice de Shannon-Wiener por Canal", x = "Canal", y = "H'") +
+  theme_minimal()
+
+# Índice de Gini-Simpson
+ggplot(indices_data, aes(x = Channel, y = Gini_Simpson)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  labs(title = "Índice de Gini-Simpson por Canal", x = "Canal", y = "1 - D") +
+  theme_minimal()
+
+# Índice de Pielou
+ggplot(indices_data, aes(x = Channel, y = Pielou)) +
+  geom_bar(stat = "identity", fill = "orchid") +
+  labs(title = "Equitatividad de Pielou por Canal", x = "Canal", y = "J'") +
+  theme_minimal()
+
+# 6. Diversidad Beta - Análisis de agrupamiento jerárquico
+# Normalizar los datos
+data_wisconsin <- wisconsin(channel_data)
+
+# Calcular distancias Bray-Curtis
+dist_bray <- vegdist(data_wisconsin, method = "bray")
+
+# Agrupamiento jerárquico
+hclust_res <- hclust(dist_bray, method = "ward.D2")
+
+# Graficar el dendrograma
+plot(hclust_res, main = "Dendrograma de Agrupamiento Jerárquico (Diversidad Beta)", 
+     xlab = "Canal", ylab = "Distancia", sub = "Método de Bray-Curtis", hang = -1)
+
+# 7. Gráficas iNEXT para estimadores asintóticos de Números de Hill 0 y 1
+
+# Convertir datos a formato iNEXT
+inext_data <- as.matrix(t(channel_data))  # Transpuesta para que las filas sean familias y las columnas canales
+inext_result <- iNEXT(inext_data, q = c(0, 1), datatype = "abundance")
+
+# Graficar curvas de interpolación/extrapolación
+ggiNEXT(inext_result) +
+  labs(title = "Curvas de Interpolación/Extrapolación para Números de Hill (q=0 y q=1)",
+       subtitle = "Riqueza (q=0) y Diversidad Shannon (q=1)") +
+  theme_bw()
+
+
+# Preparar datos de abundancia en formato requerido por iNEXT
+inext_data <- as.matrix(t(channel_data))  # Transponer para que filas sean familias y columnas sean canales
+
+# Calcular las curvas de interpolación/extrapolación para los números de Hill q=0 y q=1
+inext_result_q0 <- iNEXT(inext_data, q = 0, datatype = "abundance")
+inext_result_q1 <- iNEXT(inext_data, q = 1, datatype = "abundance")
+
+# 8. Graficar cada estimador por separado
+
+# Curva de interpolación/extrapolación para q=0 (Riqueza de especies)
+plot_q0 <- ggiNEXT(inext_result_q0) +
+  labs(title = "Curva de Interpolación/Extrapolación para q=0",
+       subtitle = "Riqueza de especies (Número de familias esperadas)") +
+  theme_bw()
+
+# Curva de interpolación/extrapolación para q=1 (Diversidad de Shannon)
+plot_q1 <- ggiNEXT(inext_result_q1) +
+  labs(title = "Curva de Interpolación/Extrapolación para q=1",
+       subtitle = "Diversidad de Shannon (equivalente de especies)") +
+  theme_bw()
+
+# Mostrar ambos gráficos por separado
+print(plot_q0)
+print(plot_q1)
+
+# 8. Información sobre los datos y observaciones
+cat("Informe: Análisis de Diversidad en Comunidades\n")
+cat("1. Carga y Procesamiento de Datos\n")
+cat("   - Se cargaron datos de abundancia de familias de invertebrados acuáticos agrupados por canal.\n")
+cat("2. Cálculo de Índices de Diversidad\n")
+cat("   - Los índices de riqueza, Shannon-Wiener, Gini-Simpson y Pielou se calcularon para cada canal.\n")
+cat("3. Gráficos\n")
+cat("   - Se generaron gráficos de barras para cada índice de diversidad alfa y un dendrograma de agrupamiento jerárquico para evaluar diversidad beta.\n")
+cat("   - Se incluyeron curvas de interpolación y extrapolación para evaluar estimadores asintóticos (Números de Hill) en diversidad alfa.\n")
+cat("Conclusión: Este análisis permite observar la variación en diversidad de familias entre canales, indicando diferencias en complejidad de comunidad que reflejan los factores ambientales o de perturbación en cada sitio.\n")
+
